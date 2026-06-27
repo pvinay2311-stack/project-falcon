@@ -1,0 +1,14 @@
+{
+  "mode": "paper",
+  "symbols_allowed": [
+    "ES1!",
+    "NQ1!",
+    "MES1!",
+    "MNQ1!"
+  ],
+  "max_trades_per_day": 2,
+  "max_daily_loss": 500,
+  "max_daily_profit": 1000,
+  "risk_per_trade": 250,
+  "enable_live_orders": false
+}

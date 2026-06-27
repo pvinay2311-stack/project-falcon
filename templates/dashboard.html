@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Project Falcon</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0f172a;
+            color: white;
+            margin: 0;
+            padding: 30px;
+        }
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+        .value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #22c55e;
+        }
+        .label {
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <h1>Project Falcon</h1>
+
+    <div class="grid">
+        <div class="card">
+            <div class="label">Bot Status</div>
+            <div class="value">RUNNING</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Mode</div>
+            <div class="value">{{ mode }}</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Tradovate</div>
+            <div class="value">NOT CONNECTED</div>
+        </div>
+
+        <div class="card">
+            <div class="label">TradingView</div>
+            <div class="value">WAITING</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Trades Today</div>
+            <div class="value">0</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Risk Status</div>
+            <div class="value">SAFE</div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,3 @@
+received_at,action,symbol,price,strategy,tradingview_time,decision,reason
+2026-06-27T18:23:24.906065,BUY,ES1!,7400.25,ES_NQ_TEST,2026-06-27T09:45:00,True,Risk check passed
+2026-06-27T18:36:44.481590,BUY,ES1!,7400.25,ES_NQ_TEST,2026-06-27T09:45:00,True,Risk check passed
