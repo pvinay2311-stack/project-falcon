@@ -1,5 +1,6 @@
 import json
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 
 class RiskManager:
@@ -19,11 +20,26 @@ class RiskManager:
     def symbol_allowed(self, symbol: str) -> bool:
         return symbol in self.config.get("symbols_allowed", [])
 
+    def session_allowed(self) -> bool:
+        if not self.config.get("trading_session_enabled", False):
+            return True
+
+        tz = ZoneInfo(self.config.get("session_timezone", "America/New_York"))
+        now = datetime.now(tz).time()
+
+        start = datetime.strptime(self.config.get("session_start", "09:45"), "%H:%M").time()
+        end = datetime.strptime(self.config.get("session_end", "11:30"), "%H:%M").time()
+
+        return start <= now <= end
+
     def check_trade_allowed(self, contracts: int = 1):
         self.reset_if_new_day()
 
         if self.config.get("emergency_stop", False):
             return {"allowed": False, "reason": "Emergency stop is ON"}
+
+        if not self.session_allowed():
+            return {"allowed": False, "reason": "Outside allowed trading session"}
 
         if contracts > self.config.get("max_contracts", 1):
             return {"allowed": False, "reason": "Contracts exceed max allowed"}

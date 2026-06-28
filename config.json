@@ -6,5 +6,9 @@
   "max_daily_profit": 1000,
   "max_contracts": 1,
   "allow_live_orders": false,
-  "emergency_stop": true
+  "emergency_stop": false,
+  "trading_session_enabled": true,
+  "session_timezone": "America/New_York",
+  "session_start": "09:45",
+  "session_end": "11:30"
 }
