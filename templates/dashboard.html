@@ -87,20 +87,20 @@
         </div>
     </div>
 
+    <h2>Recent Trades</h2>
+
     <div class="card">
-        <h2>Recent Trades</h2>
-        {% if trades %}
-        <table class="trade-table">
+        <table width="100%" cellpadding="10">
             <thead>
                 <tr>
-                    <th>Time</th>
-                    <th>Action</th>
-                    <th>Symbol</th>
-                    <th>Price</th>
-                    <th>Strategy</th>
-                    <th>Decision</th>
-                    <th>Broker</th>
-                    <th>Status</th>
+                    <th align="left">Time</th>
+                    <th align="left">Action</th>
+                    <th align="left">Symbol</th>
+                    <th align="left">Price</th>
+                    <th align="left">Strategy</th>
+                    <th align="left">Decision</th>
+                    <th align="left">Broker</th>
+                    <th align="left">Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -118,9 +118,6 @@
                 {% endfor %}
             </tbody>
         </table>
-        {% else %}
-        <p>No recent trades found.</p>
-        {% endif %}
     </div>
 </body>
 </html>
