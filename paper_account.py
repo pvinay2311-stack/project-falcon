@@ -2,14 +2,13 @@ from database import get_account_state, save_account_state
 
 
 class PaperAccount:
-    def __init__(self, contract_multiplier: int = 50, stop_points: float = 10, target_points: float = 20):
-        state = get_account_state()
-        self.position = state["position"]
-        self.entry_price = state["entry_price"]
-        self.contracts = state["contracts"]
-        self.realized_pnl = state["realized_pnl"]
-        self.stop_price = state["stop_price"]
-        self.target_price = state["target_price"]
+    def __init__(self, contract_multiplier=50, stop_points=10, target_points=20):
+        self.position = "FLAT"
+        self.entry_price = None
+        self.contracts = 0
+        self.realized_pnl = 0.0
+        self.stop_price = None
+        self.target_price = None
         self.contract_multiplier = contract_multiplier
         self.stop_points = stop_points
         self.target_points = target_points
