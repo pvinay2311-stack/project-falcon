@@ -9,14 +9,12 @@ class RiskManager:
 
         self.current_day = date.today()
         self.trades_today = 0
-        self.daily_pnl = 0.0
 
     def reset_if_new_day(self):
         today = date.today()
         if today != self.current_day:
             self.current_day = today
             self.trades_today = 0
-            self.daily_pnl = 0.0
 
     def symbol_allowed(self, symbol: str) -> bool:
         return symbol in self.config.get("symbols_allowed", [])
@@ -25,23 +23,13 @@ class RiskManager:
         self.reset_if_new_day()
 
         if self.config.get("emergency_stop", False):
-            return {"allowed": False, "reason": "Emergency stop active"}
+            return {"allowed": False, "reason": "Emergency stop is ON"}
 
-        max_contracts = self.config.get("max_contracts", 1)
-        if contracts > max_contracts:
-            return {
-                "allowed": False,
-                "reason": f"Max contracts per trade exceeded ({contracts}/{max_contracts})"
-            }
+        if contracts > self.config.get("max_contracts", 1):
+            return {"allowed": False, "reason": "Contracts exceed max allowed"}
 
-        if self.trades_today >= self.config.get("max_trades_per_day", 2):
+        if self.trades_today >= self.config.get("max_trades_per_day", 3):
             return {"allowed": False, "reason": "Max trades per day reached"}
-
-        if self.daily_pnl <= -abs(self.config.get("max_daily_loss", 500)):
-            return {"allowed": False, "reason": "Max daily loss reached"}
-
-        if self.daily_pnl >= self.config.get("max_daily_profit", 1000):
-            return {"allowed": False, "reason": "Max daily profit reached"}
 
         self.trades_today += 1
         return {"allowed": True, "reason": "Risk check passed"}
