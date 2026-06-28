@@ -35,6 +35,7 @@ def home(request: Request):
 
 @app.post("/webhook")
 def webhook(alert: TradingViewAlert):
+    print("TradingView Alert:", alert.model_dump())
     action = alert.action.upper()
 
     if action not in ["BUY", "SELL"]:
@@ -64,6 +65,5 @@ def webhook(alert: TradingViewAlert):
     # Phase 1: log only. No real order execution.
     return {
         "status": "accepted",
-        "message": "Signal received and logged. No live order sent.",
-        "signal": log_row
+        "message": "Signal received and logged. No live order sent."
     }
