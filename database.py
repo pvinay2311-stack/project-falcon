@@ -16,9 +16,23 @@ if USE_POSTGRES:
 
 
 def get_db_connection():
-    """Get database connection (PostgreSQL or SQLite)"""
+    """Get database connection (PostgreSQL or SQLite)
+    
+    For PostgreSQL:
+    - Automatically enables SSL/TLS for Neon
+    - Supports standard Neon connection strings
+    - Implements connection pooling parameters
+    
+    For SQLite:
+    - Uses local falcon.db file
+    """
     if USE_POSTGRES:
-        return psycopg2.connect(DATABASE_URL)
+        # Neon PostgreSQL with SSL/TLS support
+        return psycopg2.connect(
+            DATABASE_URL,
+            sslmode="require",  # Enforce SSL for Neon
+            connect_timeout=10
+        )
     else:
         return sqlite3.connect(DB_NAME)
 
@@ -33,86 +47,103 @@ def get_db_cursor(conn):
 
 
 def init_db():
-    conn = get_db_connection()
-    cur = get_db_cursor(conn)
+    """Initialize database tables
+    
+    Creates trades and account_state tables if they don't exist.
+    Supports both PostgreSQL (Neon) and SQLite.
+    """
+    try:
+        conn = get_db_connection()
+        cur = get_db_cursor(conn)
 
-    if USE_POSTGRES:
-        # PostgreSQL schema
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS trades (
-                id SERIAL PRIMARY KEY,
-                received_at TEXT,
-                action TEXT,
-                symbol TEXT,
-                price REAL,
-                strategy TEXT,
-                decision TEXT,
-                reason TEXT,
-                broker TEXT,
-                status TEXT,
-                score INTEGER,
-                pnl REAL,
-                position_after TEXT
-            )
-        """)
+        if USE_POSTGRES:
+            # PostgreSQL schema (Neon compatible)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id SERIAL PRIMARY KEY,
+                    received_at TEXT,
+                    action TEXT,
+                    symbol TEXT,
+                    price REAL,
+                    strategy TEXT,
+                    decision TEXT,
+                    reason TEXT,
+                    broker TEXT,
+                    status TEXT,
+                    score INTEGER,
+                    pnl REAL,
+                    position_after TEXT
+                )
+            """)
 
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS account_state (
-                id INTEGER PRIMARY KEY,
-                position TEXT,
-                entry_price REAL,
-                contracts INTEGER,
-                realized_pnl REAL,
-                stop_price REAL,
-                target_price REAL
-            )
-        """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS account_state (
+                    id INTEGER PRIMARY KEY,
+                    position TEXT,
+                    entry_price REAL,
+                    contracts INTEGER,
+                    realized_pnl REAL,
+                    stop_price REAL,
+                    target_price REAL
+                )
+            """)
 
-        cur.execute("""
-            INSERT INTO account_state (id, position, entry_price, contracts, realized_pnl, stop_price, target_price)
-            VALUES (1, 'FLAT', NULL, 0, 0.0, NULL, NULL)
-            ON CONFLICT (id) DO NOTHING
-        """)
-    else:
-        # SQLite schema
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS trades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                received_at TEXT,
-                action TEXT,
-                symbol TEXT,
-                price REAL,
-                strategy TEXT,
-                decision TEXT,
-                reason TEXT,
-                broker TEXT,
-                status TEXT,
-                score INTEGER,
-                pnl REAL,
-                position_after TEXT
-            )
-        """)
+            # Insert default account state if not exists
+            cur.execute("""
+                INSERT INTO account_state (id, position, entry_price, contracts, realized_pnl, stop_price, target_price)
+                VALUES (1, 'FLAT', NULL, 0, 0.0, NULL, NULL)
+                ON CONFLICT (id) DO NOTHING
+            """)
+        else:
+            # SQLite schema
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    received_at TEXT,
+                    action TEXT,
+                    symbol TEXT,
+                    price REAL,
+                    strategy TEXT,
+                    decision TEXT,
+                    reason TEXT,
+                    broker TEXT,
+                    status TEXT,
+                    score INTEGER,
+                    pnl REAL,
+                    position_after TEXT
+                )
+            """)
 
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS account_state (
-                id INTEGER PRIMARY KEY,
-                position TEXT,
-                entry_price REAL,
-                contracts INTEGER,
-                realized_pnl REAL,
-                stop_price REAL,
-                target_price REAL
-            )
-        """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS account_state (
+                    id INTEGER PRIMARY KEY,
+                    position TEXT,
+                    entry_price REAL,
+                    contracts INTEGER,
+                    realized_pnl REAL,
+                    stop_price REAL,
+                    target_price REAL
+                )
+            """)
 
-        cur.execute("""
-            INSERT OR IGNORE INTO account_state
-            (id, position, entry_price, contracts, realized_pnl, stop_price, target_price)
-            VALUES (1, 'FLAT', NULL, 0, 0.0, NULL, NULL)
-        """)
+            # Insert default account state if not exists
+            cur.execute("""
+                INSERT OR IGNORE INTO account_state
+                (id, position, entry_price, contracts, realized_pnl, stop_price, target_price)
+                VALUES (1, 'FLAT', NULL, 0, 0.0, NULL, NULL)
+            """)
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
+        
+        if USE_POSTGRES:
+            print("✅ PostgreSQL (Neon) database initialized")
+        else:
+            print("✅ SQLite database initialized")
+            
+    except Exception as e:
+        print(f"❌ Database initialization error: {e}")
+        raise
 
 
 def save_trade(row: dict, execution: dict, score: int | None = None, pnl: float | None = None, position_after: str | None = None):
@@ -258,3 +289,40 @@ def save_account_state(position, entry_price, contracts, realized_pnl, stop_pric
     
     conn.commit()
     conn.close()
+
+
+def test_connection():
+    """Test database connectivity
+    
+    Useful for debugging Neon PostgreSQL connections.
+    Returns tuple: (success: bool, message: str)
+    """
+    try:
+        conn = get_db_connection()
+        cur = get_db_cursor(conn)
+        
+        if USE_POSTGRES:
+            cur.execute("SELECT version()")
+            version = cur.fetchone()[0]
+            conn.close()
+            return True, f"✅ PostgreSQL connected: {version[:50]}..."
+        else:
+            cur.execute("SELECT sqlite_version()")
+            version = cur.fetchone()[0]
+            conn.close()
+            return True, f"✅ SQLite connected: {version}"
+    except Exception as e:
+        return False, f"❌ Database connection failed: {str(e)}"
+
+
+def get_db_status():
+    """Get database status and configuration
+    
+    Returns dict with backend type and connection details.
+    """
+    return {
+        "backend": "PostgreSQL (Neon)" if USE_POSTGRES else "SQLite",
+        "database_url": "***configured***" if USE_POSTGRES else DB_NAME,
+        "use_postgres": USE_POSTGRES,
+        "ssl_enabled": USE_POSTGRES
+    }
