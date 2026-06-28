@@ -11,7 +11,7 @@ from execution_router import ExecutionRouter
 app = FastAPI(title="Project Falcon ES/NQ Bot")
 
 risk = RiskManager("config.json")
-logger = TradeLogger("logs/trades.csv")
+logger = TradeLogger("trades.csv")
 executor = ExecutionRouter(risk.config.get("mode", "paper"))
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
