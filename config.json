@@ -11,5 +11,9 @@
   "session_timezone": "America/New_York",
   "session_start": "09:45",
   "session_end": "11:30",
-  "webhook_secret": "falcon123"
+  "webhook_secret": "falcon123",
+  "strategy_min_score": 70,
+  "default_stop_points": 10,
+  "default_target_points": 20,
+  "contract_multiplier": 50
 }

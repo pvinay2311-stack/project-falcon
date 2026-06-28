@@ -67,42 +67,18 @@
         </div>
 
         <div class="card">
-            <div class="label">Current Position</div>
-            <div class="value">{{ current_position }}</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Last Signal</div>
-            <div class="value">
-                {{ strategy_status.last_signal.action if strategy_status.last_signal else "WAITING" }}
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="label">Strategy Score</div>
-            <div class="value">
-                {{ strategy_status.last_signal.score if strategy_status.last_signal else 0 }}
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="label">Total Trades</div>
-            <div class="value">{{ stats.total_trades }}</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Tradovate</div>
-            <div class="value">NOT CONNECTED</div>
-        </div>
-
-        <div class="card">
-            <div class="label">TradingView</div>
-            <div class="value">WAITING</div>
-        </div>
-
-        <div class="card">
             <div class="label">Paper Position</div>
             <div class="value">{{ paper_account.position }}</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Entry Price</div>
+            <div class="value">{{ paper_account.entry_price or "-" }}</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Stop / Target</div>
+            <div class="value">{{ paper_account.stop_price or "-" }} / {{ paper_account.target_price or "-" }}</div>
         </div>
 
         <div class="card">
@@ -124,22 +100,40 @@
             <div class="label">Trades Today</div>
             <div class="value">{{ risk_status.trades_today }}/{{ risk_status.max_trades_per_day }}</div>
         </div>
+
+        <div class="card">
+            <div class="label">Total Trades</div>
+            <div class="value">{{ stats.total_trades }}</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Win Rate</div>
+            <div class="value">{{ stats.win_rate }}%</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Net P&L</div>
+            <div class="value">${{ stats.net_pnl }}</div>
+        </div>
     </div>
 
     <h2>Recent Trades</h2>
 
     <div class="card">
-        <table width="100%" cellpadding="10">
+        <table class="trade-table">
             <thead>
                 <tr>
-                    <th align="left">Time</th>
-                    <th align="left">Action</th>
-                    <th align="left">Symbol</th>
-                    <th align="left">Price</th>
-                    <th align="left">Strategy</th>
-                    <th align="left">Decision</th>
-                    <th align="left">Broker</th>
-                    <th align="left">Status</th>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>Symbol</th>
+                    <th>Price</th>
+                    <th>Strategy</th>
+                    <th>Decision</th>
+                    <th>Broker</th>
+                    <th>Status</th>
+                    <th>Score</th>
+                    <th>P&L</th>
+                    <th>Position After</th>
                 </tr>
             </thead>
             <tbody>
@@ -153,6 +147,9 @@
                     <td>{{ trade[5] }}</td>
                     <td>{{ trade[6] }}</td>
                     <td>{{ trade[7] }}</td>
+                    <td>{{ trade[8] }}</td>
+                    <td>{{ trade[9] }}</td>
+                    <td>{{ trade[10] }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
