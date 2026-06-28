@@ -82,6 +82,16 @@
         </div>
 
         <div class="card">
+            <div class="label">Paper Position</div>
+            <div class="value">{{ paper_account.position }}</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Paper P&L</div>
+            <div class="value">${{ paper_account.realized_pnl }}</div>
+        </div>
+
+        <div class="card">
             <div class="label">Session Allowed</div>
             <div class="value">{{ risk_status.session_allowed }}</div>
         </div>

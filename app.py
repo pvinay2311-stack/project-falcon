@@ -9,6 +9,7 @@ from logger import TradeLogger
 from execution_router import ExecutionRouter
 from database import save_trade, get_recent_trades
 from position_manager import PositionManager
+from paper_account import PaperAccount
 
 app = FastAPI(title="Project Falcon ES/NQ Bot")
 
@@ -16,6 +17,7 @@ risk = RiskManager("config.json")
 logger = TradeLogger("trades.csv")
 executor = ExecutionRouter(risk.config.get("mode", "paper"))
 position = PositionManager()
+paper_account = PaperAccount()
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 templates = Jinja2Templates(directory="templates")
@@ -38,7 +40,8 @@ def home(request: Request):
             "mode": risk.config.get("mode", "paper"),
             "trades": get_recent_trades(),
             "risk_status": risk.get_status(),
-            "current_position": position.get_position()
+            "current_position": position.get_position(),
+            "paper_account": paper_account.get_status()
         },
     )
 
@@ -74,7 +77,8 @@ def webhook(alert: TradingViewAlert):
         return {
             "status": "blocked",
             "reason": decision["reason"],
-            "risk_status": risk.get_status()
+            "risk_status": risk.get_status(),
+            "paper_account": paper_account.get_status()
         }
 
     position_decision = position.process(action)
@@ -83,8 +87,15 @@ def webhook(alert: TradingViewAlert):
             "status": "ignored",
             "reason": position_decision["reason"],
             "position": position_decision["position_after"],
-            "risk_status": risk.get_status()
+            "risk_status": risk.get_status(),
+            "paper_account": paper_account.get_status()
         }
+
+    paper_result = paper_account.process_order(
+        action=action,
+        price=alert.price,
+        contracts=contracts
+    )
 
     execution_result = executor.execute(
         action=action,
@@ -93,6 +104,8 @@ def webhook(alert: TradingViewAlert):
         contracts=contracts
     )
 
+    execution_result["paper_account"] = paper_result
+
     save_trade(log_row, execution_result)
 
     return {
@@ -100,5 +113,6 @@ def webhook(alert: TradingViewAlert):
         "message": "Signal received and routed.",
         "signal": log_row,
         "execution": execution_result,
-        "risk_status": risk.get_status()
+        "risk_status": risk.get_status(),
+        "paper_account": paper_account.get_status()
     }
