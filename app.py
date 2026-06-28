@@ -50,7 +50,8 @@ def webhook(alert: TradingViewAlert):
     if not risk.symbol_allowed(alert.symbol):
         raise HTTPException(status_code=400, detail=f"Symbol not allowed: {alert.symbol}")
 
-    decision = risk.check_trade_allowed()
+    contracts = 1
+    decision = risk.check_trade_allowed(contracts=contracts)
 
     log_row = {
         "received_at": datetime.utcnow().isoformat(),
@@ -72,7 +73,7 @@ def webhook(alert: TradingViewAlert):
         action=action,
         symbol=alert.symbol,
         price=alert.price,
-        contracts=1
+        contracts=contracts
     )
 
     save_trade(log_row, execution_result)
