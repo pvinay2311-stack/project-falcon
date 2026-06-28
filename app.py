@@ -164,7 +164,7 @@ def webhook(alert: TradingViewAlert):
         execution_result,
         score=strategy_score.get("score"),
         pnl=paper_result.get("pnl"),
-        position_after=paper_result.get("position")
+        position_after=paper_state.get("position")
     )
 
     return {
