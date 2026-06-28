@@ -150,7 +150,48 @@ def webhook(alert: TradingViewAlert):
             "strategy_score": strategy_score
         }
 
-    print("STEP 3 - Risk check")
+    print("STEP 3 - Paper account position check")
+    paper_result = paper_account.process_order(
+        action=action,
+        price=alert.price,
+        contracts=contracts
+    )
+
+    # Check if position change was valid
+    if paper_result.get("status") == "ignored":
+        print("BLOCKED - Invalid position transition:", paper_result.get("reason"))
+
+        log_row = {
+            "received_at": datetime.utcnow().isoformat(),
+            "action": action,
+            "symbol": alert.symbol,
+            "price": alert.price,
+            "strategy": alert.strategy,
+            "tradingview_time": alert.time,
+            "decision": False,
+            "reason": paper_result.get("reason", "Invalid position transition")
+        }
+
+        execution_result = {
+            "broker": risk.config.get("mode", "paper"),
+            "status": "position_blocked"
+        }
+
+        save_trade(
+            log_row,
+            execution_result,
+            score=strategy_score.get("score"),
+            pnl=None,
+            position_after=paper_account.get_status()["position"]
+        )
+
+        return {
+            "status": "blocked",
+            "reason": paper_result.get("reason", "Invalid position transition"),
+            "paper_account": paper_account.get_status()
+        }
+
+    print("STEP 4 - Risk check (only if position valid)")
     decision = risk.check_trade_allowed(
         contracts=contracts,
         realized_pnl=paper_account.get_status()["realized_pnl"]
@@ -189,13 +230,6 @@ def webhook(alert: TradingViewAlert):
             "risk_status": risk.get_status(),
             "paper_account": paper_account.get_status()
         }
-
-    print("STEP 4 - Paper account process")
-    paper_result = paper_account.process_order(
-        action=action,
-        price=alert.price,
-        contracts=contracts
-    )
 
     print("STEP 5 - Execution router")
     execution_result = executor.execute(
