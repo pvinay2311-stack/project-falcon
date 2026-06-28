@@ -59,3 +59,19 @@ def get_recent_trades(limit: int = 20):
     rows = cur.fetchall()
     conn.close()
     return rows
+
+
+def get_today_trades():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    today = datetime.utcnow().date().isoformat()
+
+    cur.execute("""
+        SELECT price, status
+        FROM trades
+        WHERE received_at LIKE ?
+    """, (today + "%",))
+
+    rows = cur.fetchall()
+    conn.close()
+    return rows
