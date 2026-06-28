@@ -174,7 +174,7 @@ def webhook(alert: TradingViewAlert):
 
         execution_result = {
             "broker": risk.config.get("mode", "paper"),
-            "status": "position_blocked"
+            "status": "ignored"
         }
 
         save_trade(
@@ -182,7 +182,7 @@ def webhook(alert: TradingViewAlert):
             execution_result,
             score=strategy_score.get("score"),
             pnl=None,
-            position_after=paper_account.get_status()["position"]
+            position_after=paper_result.get("position")
         )
 
         return {
