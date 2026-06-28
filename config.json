@@ -3,7 +3,7 @@
   "symbols_allowed": ["ES1!", "NQ1!", "MES1!", "MNQ1!"],
   "max_trades_per_day": 3,
   "max_daily_loss": 500,
-  "max_daily_profit": 1000,
+  "max_daily_profit": 999999,
   "max_contracts": 1,
   "allow_live_orders": false,
   "emergency_stop": false,
