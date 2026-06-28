@@ -7,6 +7,7 @@ from datetime import datetime
 from risk_manager import RiskManager
 from logger import TradeLogger
 from execution_router import ExecutionRouter
+from database import save_trade
 
 app = FastAPI(title="Project Falcon ES/NQ Bot")
 
@@ -70,6 +71,8 @@ def webhook(alert: TradingViewAlert):
         price=alert.price,
         contracts=1
     )
+
+    save_trade(log_row, execution_result)
 
     return {
         "status": "accepted",
