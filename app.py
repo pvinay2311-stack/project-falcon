@@ -14,7 +14,7 @@ from strategy_engine import StrategyEngine
 from trade_manager import TradeManager
 from statistics_engine import calculate_stats
 
-app = FastAPI(title="Project Falcon ES/NQ Bot")
+app = FastAPI(title="Project Falcon ES/NQ Bot - v2")
 
 risk = RiskManager("config.json")
 logger = TradeLogger("trades.csv")
