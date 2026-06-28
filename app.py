@@ -148,6 +148,8 @@ def webhook(alert: TradingViewAlert):
         contracts=contracts
     )
 
+    paper_state = paper_account.get_status()
+
     execution_result = executor.execute(
         action=action,
         symbol=alert.symbol,
