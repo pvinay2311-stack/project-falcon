@@ -21,12 +21,18 @@ class RiskManager:
     def symbol_allowed(self, symbol: str) -> bool:
         return symbol in self.config.get("symbols_allowed", [])
 
-    def check_trade_allowed(self):
+    def check_trade_allowed(self, contracts: int = 1):
         self.reset_if_new_day()
 
-        if not self.config.get("enable_live_orders", False):
-            # Still allow logging in paper/research mode
-            pass
+        if self.config.get("emergency_stop", False):
+            return {"allowed": False, "reason": "Emergency stop active"}
+
+        max_contracts = self.config.get("max_contracts", 1)
+        if contracts > max_contracts:
+            return {
+                "allowed": False,
+                "reason": f"Max contracts per trade exceeded ({contracts}/{max_contracts})"
+            }
 
         if self.trades_today >= self.config.get("max_trades_per_day", 2):
             return {"allowed": False, "reason": "Max trades per day reached"}
