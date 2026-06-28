@@ -53,7 +53,8 @@ def webhook(alert: TradingViewAlert):
     print("TradingView Alert:", alert.model_dump())
     action = alert.action.upper()
 
-    if alert.secret != risk.config.get("webhook_secret"):
+    expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
+    if alert.secret != expected_secret:
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
     if action not in ["BUY", "SELL"]:
@@ -63,7 +64,10 @@ def webhook(alert: TradingViewAlert):
         raise HTTPException(status_code=400, detail=f"Symbol not allowed: {alert.symbol}")
 
     contracts = 1
-    decision = risk.check_trade_allowed(contracts=contracts)
+    decision = risk.check_trade_allowed(
+        contracts=contracts,
+        realized_pnl=paper_account.get_status()["realized_pnl"]
+    )
 
     log_row = {
         "received_at": datetime.utcnow().isoformat(),

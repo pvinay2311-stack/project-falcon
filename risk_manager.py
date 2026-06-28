@@ -42,7 +42,7 @@ class RiskManager:
             "mode": self.config.get("mode", "paper")
         }
 
-    def check_trade_allowed(self, contracts: int = 1):
+    def check_trade_allowed(self, contracts: int = 1, realized_pnl: float = 0.0):
         self.reset_if_new_day()
 
         if self.config.get("emergency_stop", False):
@@ -50,6 +50,12 @@ class RiskManager:
 
         if not self.session_allowed():
             return {"allowed": False, "reason": "Outside allowed trading session"}
+
+        if realized_pnl <= -abs(self.config.get("max_daily_loss", 500)):
+            return {"allowed": False, "reason": "Max daily loss reached"}
+
+        if realized_pnl >= self.config.get("max_daily_profit", 1000):
+            return {"allowed": False, "reason": "Max daily profit reached"}
 
         if contracts > self.config.get("max_contracts", 1):
             return {"allowed": False, "reason": "Contracts exceed max allowed"}
