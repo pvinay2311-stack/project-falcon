@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from datetime import datetime
+from dotenv import load_dotenv
 from risk_manager import RiskManager
 from logger import TradeLogger
 from execution_router import ExecutionRouter
@@ -13,6 +14,9 @@ from paper_account import PaperAccount
 from strategy_engine import StrategyEngine
 from trade_manager import TradeManager
 from statistics_engine import calculate_stats
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = FastAPI(title="Project Falcon ES/NQ Bot - v2")
 
