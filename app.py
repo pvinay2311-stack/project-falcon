@@ -8,12 +8,14 @@ from risk_manager import RiskManager
 from logger import TradeLogger
 from execution_router import ExecutionRouter
 from database import save_trade, get_recent_trades
+from position_manager import PositionManager
 
 app = FastAPI(title="Project Falcon ES/NQ Bot")
 
 risk = RiskManager("config.json")
 logger = TradeLogger("trades.csv")
 executor = ExecutionRouter(risk.config.get("mode", "paper"))
+position = PositionManager()
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 templates = Jinja2Templates(directory="templates")
@@ -35,7 +37,8 @@ def home(request: Request):
         context={
             "mode": risk.config.get("mode", "paper"),
             "trades": get_recent_trades(),
-            "risk_status": risk.get_status()
+            "risk_status": risk.get_status(),
+            "current_position": position.get_position()
         },
     )
 
@@ -71,6 +74,15 @@ def webhook(alert: TradingViewAlert):
         return {
             "status": "blocked",
             "reason": decision["reason"],
+            "risk_status": risk.get_status()
+        }
+
+    position_decision = position.process(action)
+    if not position_decision["allowed"]:
+        return {
+            "status": "ignored",
+            "reason": position_decision["reason"],
+            "position": position_decision["position_after"],
             "risk_status": risk.get_status()
         }
 
