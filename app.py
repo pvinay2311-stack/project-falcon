@@ -157,7 +157,13 @@ def webhook(alert: TradingViewAlert):
 
     execution_result["paper_account"] = paper_result
 
-    save_trade(log_row, execution_result)
+    save_trade(
+        log_row,
+        execution_result,
+        score=strategy_score.get("score"),
+        pnl=paper_result.get("pnl"),
+        position_after=paper_result.get("position")
+    )
 
     return {
         "status": "accepted",
