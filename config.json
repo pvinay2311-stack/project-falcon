@@ -10,5 +10,6 @@
   "trading_session_enabled": true,
   "session_timezone": "America/New_York",
   "session_start": "09:45",
-  "session_end": "11:30"
+  "session_end": "11:30",
+  "secret": "falcon123"
 }

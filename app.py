@@ -30,6 +30,7 @@ class TradingViewAlert(BaseModel):
     price: float | None = None
     strategy: str | None = None
     time: str | None = None
+    secret: str | None = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -51,6 +52,9 @@ def home(request: Request):
 def webhook(alert: TradingViewAlert):
     print("TradingView Alert:", alert.model_dump())
     action = alert.action.upper()
+
+    if alert.secret != risk.config.get("webhook_secret"):
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
     if action not in ["BUY", "SELL"]:
         raise HTTPException(status_code=400, detail="Invalid action. Use BUY or SELL.")
