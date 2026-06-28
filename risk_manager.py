@@ -39,6 +39,9 @@ class RiskManager:
             "session_allowed": self.session_allowed(),
             "trades_today": self.trades_today,
             "max_trades_per_day": self.config.get("max_trades_per_day", 3),
+            "max_daily_loss": self.config.get("max_daily_loss", 500),
+            "max_daily_profit": self.config.get("max_daily_profit", 1000),
+            "max_contracts": self.config.get("max_contracts", 1),
             "mode": self.config.get("mode", "paper")
         }
 

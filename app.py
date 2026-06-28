@@ -42,7 +42,6 @@ def home(request: Request):
             "mode": risk.config.get("mode", "paper"),
             "trades": get_recent_trades(),
             "risk_status": risk.get_status(),
-            "current_position": position.get_position(),
             "paper_account": paper_account.get_status()
         },
     )
