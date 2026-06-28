@@ -18,16 +18,23 @@ app = FastAPI(title="Project Falcon ES/NQ Bot")
 
 risk = RiskManager("config.json")
 logger = TradeLogger("trades.csv")
+init_db()
+
+executor = ExecutionRouter(risk.config.get("mode", "paper"))
+position = PositionManager()
+
+try:
+    paper_account = PaperAccount(
+        contract_multiplier=risk.config.get("contract_multiplier", 50),
+        stop_points=risk.config.get("default_stop_points", 10),
+        target_points=risk.config.get("default_target_points", 20)
+    )
+except Exception as e:
+    print(f"Warning: Could not initialize PaperAccount: {e}")
+    paper_account = None
+
 strategy_engine = StrategyEngine(min_score=risk.config.get("strategy_min_score", 70))
 trade_manager = TradeManager()
-executor = ExecutionRouter(risk.config.get("mode", "paper"))
-init_db()
-position = PositionManager()
-paper_account = PaperAccount(
-    contract_multiplier=risk.config.get("contract_multiplier", 50),
-    stop_points=risk.config.get("default_stop_points", 10),
-    target_points=risk.config.get("default_target_points", 20)
-)
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
 templates = Jinja2Templates(directory="templates")
