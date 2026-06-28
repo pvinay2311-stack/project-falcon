@@ -7,7 +7,7 @@ from datetime import datetime
 from risk_manager import RiskManager
 from logger import TradeLogger
 from execution_router import ExecutionRouter
-from database import save_trade
+from database import save_trade, get_recent_trades
 
 app = FastAPI(title="Project Falcon ES/NQ Bot")
 
@@ -32,7 +32,10 @@ def home(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
-        context={"mode": risk.config.get("mode", "paper")},
+        context={
+            "mode": risk.config.get("mode", "paper"),
+            "trades": get_recent_trades()
+        },
     )
 
 

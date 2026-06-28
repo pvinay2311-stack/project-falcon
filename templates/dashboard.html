@@ -29,6 +29,27 @@
         .label {
             color: #94a3b8;
         }
+        .trade-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .trade-table th,
+        .trade-table td {
+            border: 1px solid #334155;
+            padding: 10px;
+            text-align: left;
+        }
+        .trade-table th {
+            background: #0f172a;
+            color: #cbd5e1;
+        }
+        .trade-table tr:nth-child(even) {
+            background: #111827;
+        }
+        .trade-table td {
+            color: #e2e8f0;
+        }
     </style>
 </head>
 <body>
@@ -57,13 +78,49 @@
 
         <div class="card">
             <div class="label">Trades Today</div>
-            <div class="value">0</div>
+            <div class="value">{{ trades | length }}</div>
         </div>
 
         <div class="card">
             <div class="label">Risk Status</div>
             <div class="value">SAFE</div>
         </div>
+    </div>
+
+    <div class="card">
+        <h2>Recent Trades</h2>
+        {% if trades %}
+        <table class="trade-table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Action</th>
+                    <th>Symbol</th>
+                    <th>Price</th>
+                    <th>Strategy</th>
+                    <th>Decision</th>
+                    <th>Broker</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for trade in trades %}
+                <tr>
+                    <td>{{ trade[0] }}</td>
+                    <td>{{ trade[1] }}</td>
+                    <td>{{ trade[2] }}</td>
+                    <td>{{ trade[3] }}</td>
+                    <td>{{ trade[4] }}</td>
+                    <td>{{ trade[5] }}</td>
+                    <td>{{ trade[6] }}</td>
+                    <td>{{ trade[7] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No recent trades found.</p>
+        {% endif %}
     </div>
 </body>
 </html>
