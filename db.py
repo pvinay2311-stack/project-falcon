@@ -20,6 +20,23 @@ def init_db():
             status TEXT
         )
     """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS account_state (
+            id INTEGER PRIMARY KEY,
+            position TEXT,
+            entry_price REAL,
+            contracts INTEGER,
+            realized_pnl REAL
+        )
+    """)
+
+    cur.execute("""
+        INSERT OR IGNORE INTO account_state
+        (id, position, entry_price, contracts, realized_pnl)
+        VALUES (1, 'FLAT', NULL, 0, 0.0)
+    """)
+
     conn.commit()
     conn.close()
 
@@ -43,6 +60,37 @@ def save_trade(row: dict, execution: dict):
         execution.get("broker"),
         execution.get("status")
     ))
+    conn.commit()
+    conn.close()
+
+
+def get_account_state():
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT position, entry_price, contracts, realized_pnl
+        FROM account_state
+        WHERE id = 1
+    """ )
+    row = cur.fetchone()
+    conn.close()
+
+    return {
+        "position": row[0],
+        "entry_price": row[1],
+        "contracts": row[2],
+        "realized_pnl": row[3]
+    }
+
+
+def save_account_state(position, entry_price, contracts, realized_pnl):
+    conn = sqlite3.connect(DB_NAME)
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE account_state
+        SET position = ?, entry_price = ?, contracts = ?, realized_pnl = ?
+        WHERE id = 1
+    """, (position, entry_price, contracts, realized_pnl))
     conn.commit()
     conn.close()
 

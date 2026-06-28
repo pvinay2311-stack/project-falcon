@@ -7,7 +7,7 @@ from datetime import datetime
 from risk_manager import RiskManager
 from logger import TradeLogger
 from execution_router import ExecutionRouter
-from database import save_trade, get_recent_trades
+from database import init_db, save_trade, get_recent_trades
 from position_manager import PositionManager
 from paper_account import PaperAccount
 
@@ -16,6 +16,7 @@ app = FastAPI(title="Project Falcon ES/NQ Bot")
 risk = RiskManager("config.json")
 logger = TradeLogger("trades.csv")
 executor = ExecutionRouter(risk.config.get("mode", "paper"))
+init_db()
 position = PositionManager()
 paper_account = PaperAccount()
 BASE_DIR = Path(__file__).resolve().parent

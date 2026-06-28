@@ -1,9 +1,21 @@
+from database import get_account_state, save_account_state
+
+
 class PaperAccount:
     def __init__(self):
-        self.position = "FLAT"
-        self.entry_price = None
-        self.contracts = 0
-        self.realized_pnl = 0.0
+        state = get_account_state()
+        self.position = state["position"]
+        self.entry_price = state["entry_price"]
+        self.contracts = state["contracts"]
+        self.realized_pnl = state["realized_pnl"]
+
+    def persist(self):
+        save_account_state(
+            self.position,
+            self.entry_price,
+            self.contracts,
+            self.realized_pnl
+        )
 
     def process_order(self, action: str, price: float, contracts: int = 1):
         action = action.upper()
@@ -18,6 +30,7 @@ class PaperAccount:
 
             self.entry_price = price
             self.contracts = contracts
+            self.persist()
 
             return {
                 "status": "opened",
@@ -32,8 +45,14 @@ class PaperAccount:
             self.position = "FLAT"
             self.entry_price = None
             self.contracts = 0
+            self.persist()
 
-            return {"status": "closed_long", "pnl": pnl, "realized_pnl": self.realized_pnl, "position": self.position}
+            return {
+                "status": "closed_long",
+                "pnl": pnl,
+                "realized_pnl": self.realized_pnl,
+                "position": self.position
+            }
 
         if self.position == "SHORT" and action == "BUY":
             pnl = (self.entry_price - price) * 50 * self.contracts
@@ -41,8 +60,14 @@ class PaperAccount:
             self.position = "FLAT"
             self.entry_price = None
             self.contracts = 0
+            self.persist()
 
-            return {"status": "closed_short", "pnl": pnl, "realized_pnl": self.realized_pnl, "position": self.position}
+            return {
+                "status": "closed_short",
+                "pnl": pnl,
+                "realized_pnl": self.realized_pnl,
+                "position": self.position
+            }
 
         return {
             "status": "ignored",
