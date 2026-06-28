@@ -6,5 +6,5 @@
   "max_daily_profit": 1000,
   "max_contracts": 1,
   "allow_live_orders": false,
-  "emergency_stop": false
+  "emergency_stop": true
 }
