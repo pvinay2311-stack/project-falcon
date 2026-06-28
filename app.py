@@ -10,11 +10,16 @@ from execution_router import ExecutionRouter
 from database import init_db, save_trade, get_recent_trades
 from position_manager import PositionManager
 from paper_account import PaperAccount
+from strategy_engine import StrategyEngine
+from trade_manager import TradeManager
+from statistics_engine import calculate_stats
 
 app = FastAPI(title="Project Falcon ES/NQ Bot")
 
 risk = RiskManager("config.json")
 logger = TradeLogger("trades.csv")
+strategy_engine = StrategyEngine(min_score=70)
+trade_manager = TradeManager()
 executor = ExecutionRouter(risk.config.get("mode", "paper"))
 init_db()
 position = PositionManager()
@@ -33,6 +38,8 @@ class TradingViewAlert(BaseModel):
     secret: str | None = None
 
 
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(
@@ -42,7 +49,9 @@ def home(request: Request):
             "mode": risk.config.get("mode", "paper"),
             "trades": get_recent_trades(),
             "risk_status": risk.get_status(),
-            "paper_account": paper_account.get_status()
+            "paper_account": paper_account.get_status(),
+            "strategy_status": trade_manager.get_status(),
+            "stats": calculate_stats(get_recent_trades())
         },
     )
 
@@ -61,6 +70,29 @@ def webhook(alert: TradingViewAlert):
 
     if not risk.symbol_allowed(alert.symbol):
         raise HTTPException(status_code=400, detail=f"Symbol not allowed: {alert.symbol}")
+
+    strategy_score = strategy_engine.score_signal(
+        action=action,
+        symbol=alert.symbol,
+        price=alert.price,
+        risk_status=risk.get_status()
+    )
+
+    trade_decision = trade_manager.process_signal(
+        action=action,
+        symbol=alert.symbol,
+        price=alert.price,
+        strategy_score=strategy_score
+    )
+
+    if not trade_decision["allowed"]:
+        return {
+            "status": "blocked",
+            "reason": trade_decision["reason"],
+            "strategy_score": strategy_score,
+            "strategy_status": trade_manager.get_status(),
+            "stats": calculate_stats(get_recent_trades())
+        }
 
     contracts = 1
     decision = risk.check_trade_allowed(

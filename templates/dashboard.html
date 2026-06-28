@@ -72,6 +72,25 @@
         </div>
 
         <div class="card">
+            <div class="label">Last Signal</div>
+            <div class="value">
+                {{ strategy_status.last_signal.action if strategy_status.last_signal else "WAITING" }}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="label">Strategy Score</div>
+            <div class="value">
+                {{ strategy_status.last_signal.score if strategy_status.last_signal else 0 }}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="label">Total Trades</div>
+            <div class="value">{{ stats.total_trades }}</div>
+        </div>
+
+        <div class="card">
             <div class="label">Tradovate</div>
             <div class="value">NOT CONNECTED</div>
         </div>
