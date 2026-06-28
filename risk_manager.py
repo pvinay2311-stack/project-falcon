@@ -32,6 +32,16 @@ class RiskManager:
 
         return start <= now <= end
 
+    def get_status(self):
+        return {
+            "emergency_stop": self.config.get("emergency_stop", False),
+            "trading_session_enabled": self.config.get("trading_session_enabled", False),
+            "session_allowed": self.session_allowed(),
+            "trades_today": self.trades_today,
+            "max_trades_per_day": self.config.get("max_trades_per_day", 3),
+            "mode": self.config.get("mode", "paper")
+        }
+
     def check_trade_allowed(self, contracts: int = 1):
         self.reset_if_new_day()
 

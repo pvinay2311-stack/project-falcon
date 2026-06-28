@@ -77,13 +77,18 @@
         </div>
 
         <div class="card">
-            <div class="label">Trades Today</div>
-            <div class="value">{{ trades | length }}</div>
+            <div class="label">Session Allowed</div>
+            <div class="value">{{ risk_status.session_allowed }}</div>
         </div>
 
         <div class="card">
-            <div class="label">Risk Status</div>
-            <div class="value">SAFE</div>
+            <div class="label">Emergency Stop</div>
+            <div class="value">{{ risk_status.emergency_stop }}</div>
+        </div>
+
+        <div class="card">
+            <div class="label">Trades Today</div>
+            <div class="value">{{ risk_status.trades_today }}/{{ risk_status.max_trades_per_day }}</div>
         </div>
     </div>
 

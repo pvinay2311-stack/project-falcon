@@ -34,7 +34,8 @@ def home(request: Request):
         name="dashboard.html",
         context={
             "mode": risk.config.get("mode", "paper"),
-            "trades": get_recent_trades()
+            "trades": get_recent_trades(),
+            "risk_status": risk.get_status()
         },
     )
 
@@ -67,7 +68,11 @@ def webhook(alert: TradingViewAlert):
     logger.log(log_row)
 
     if not decision["allowed"]:
-        return {"status": "blocked", "reason": decision["reason"]}
+        return {
+            "status": "blocked",
+            "reason": decision["reason"],
+            "risk_status": risk.get_status()
+        }
 
     execution_result = executor.execute(
         action=action,
@@ -82,5 +87,6 @@ def webhook(alert: TradingViewAlert):
         "status": "accepted",
         "message": "Signal received and routed.",
         "signal": log_row,
-        "execution": execution_result
+        "execution": execution_result,
+        "risk_status": risk.get_status()
     }
