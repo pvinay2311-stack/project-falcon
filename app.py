@@ -5,43 +5,35 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from datetime import datetime
 from dotenv import load_dotenv
+
 from risk_manager import RiskManager
-from logger import TradeLogger
 from execution_router import ExecutionRouter
-from database import init_db, save_trade, get_recent_trades
-from position_manager import PositionManager
+from database import init_db, save_trade, get_recent_trades, get_db_status, test_connection
 from paper_account import PaperAccount
 from strategy_engine import StrategyEngine
 from trade_manager import TradeManager
 from statistics_engine import calculate_stats
 
-# Load environment variables from .env file
 load_dotenv()
 
 app = FastAPI(title="Project Falcon ES/NQ Bot - v2")
 
 risk = RiskManager("config.json")
-logger = TradeLogger("trades.csv")
 init_db()
 
 executor = ExecutionRouter(risk.config.get("mode", "paper"))
-position = PositionManager()
 
-try:
-    paper_account = PaperAccount(
-        contract_multiplier=risk.config.get("contract_multiplier", 50),
-        stop_points=risk.config.get("default_stop_points", 10),
-        target_points=risk.config.get("default_target_points", 20)
-    )
-except Exception as e:
-    print(f"Warning: Could not initialize PaperAccount: {e}")
-    paper_account = None
+paper_account = PaperAccount(
+    contract_multiplier=risk.config.get("contract_multiplier", 50),
+    stop_points=risk.config.get("default_stop_points", 10),
+    target_points=risk.config.get("default_target_points", 20)
+)
 
 strategy_engine = StrategyEngine(min_score=risk.config.get("strategy_min_score", 70))
 trade_manager = TradeManager()
+
 BASE_DIR = Path(__file__).resolve().parent
-TEMPLATES_DIR = BASE_DIR / "templates"
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
 class TradingViewAlert(BaseModel):
@@ -53,39 +45,63 @@ class TradingViewAlert(BaseModel):
     secret: str | None = None
 
 
-
-
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
+    trades = get_recent_trades()
+
     return templates.TemplateResponse(
         request=request,
         name="dashboard.html",
         context={
             "mode": risk.config.get("mode", "paper"),
-            "trades": get_recent_trades(),
+            "trades": trades,
             "risk_status": risk.get_status(),
             "paper_account": paper_account.get_status(),
             "strategy_status": trade_manager.get_status(),
-            "stats": calculate_stats(get_recent_trades())
+            "stats": calculate_stats(trades)
         },
     )
 
 
+@app.get("/health")
+def health():
+    db_success, db_message = test_connection()
+    return {
+        "status": "ok",
+        "mode": risk.config.get("mode", "paper"),
+        "database": get_db_status(),
+        "database_connection": db_message if db_success else f"❌ {db_message}",
+        "risk_status": risk.get_status(),
+        "paper_account": paper_account.get_status()
+    }
+
+
 @app.post("/webhook")
 def webhook(alert: TradingViewAlert):
-    print("TradingView Alert:", alert.model_dump())
+    print("STEP 0 - TradingView Alert:", alert.model_dump())
+
     action = alert.action.upper()
 
     expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
     if alert.secret != expected_secret:
+        print("BLOCKED - Invalid secret")
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
     if action not in ["BUY", "SELL"]:
+        print("BLOCKED - Invalid action")
         raise HTTPException(status_code=400, detail="Invalid action. Use BUY or SELL.")
 
     if not risk.symbol_allowed(alert.symbol):
+        print("BLOCKED - Symbol not allowed")
         raise HTTPException(status_code=400, detail=f"Symbol not allowed: {alert.symbol}")
 
+    if alert.price is None or alert.price <= 0:
+        print("BLOCKED - Invalid price")
+        raise HTTPException(status_code=400, detail="Valid price is required.")
+
+    contracts = 1
+
+    print("STEP 1 - Strategy scoring")
     strategy_score = strategy_engine.score_signal(
         action=action,
         symbol=alert.symbol,
@@ -93,6 +109,7 @@ def webhook(alert: TradingViewAlert):
         risk_status=risk.get_status()
     )
 
+    print("STEP 2 - Trade manager")
     trade_decision = trade_manager.process_signal(
         action=action,
         symbol=alert.symbol,
@@ -101,15 +118,39 @@ def webhook(alert: TradingViewAlert):
     )
 
     if not trade_decision["allowed"]:
+        print("BLOCKED - Strategy rejected")
+
+        log_row = {
+            "received_at": datetime.utcnow().isoformat(),
+            "action": action,
+            "symbol": alert.symbol,
+            "price": alert.price,
+            "strategy": alert.strategy,
+            "tradingview_time": alert.time,
+            "decision": False,
+            "reason": trade_decision["reason"]
+        }
+
+        execution_result = {
+            "broker": risk.config.get("mode", "paper"),
+            "status": "strategy_blocked"
+        }
+
+        save_trade(
+            log_row,
+            execution_result,
+            score=strategy_score.get("score"),
+            pnl=None,
+            position_after=paper_account.get_status()["position"]
+        )
+
         return {
             "status": "blocked",
             "reason": trade_decision["reason"],
-            "strategy_score": strategy_score,
-            "strategy_status": trade_manager.get_status(),
-            "stats": calculate_stats(get_recent_trades())
+            "strategy_score": strategy_score
         }
 
-    contracts = 1
+    print("STEP 3 - Risk check")
     decision = risk.check_trade_allowed(
         contracts=contracts,
         realized_pnl=paper_account.get_status()["realized_pnl"]
@@ -126,9 +167,22 @@ def webhook(alert: TradingViewAlert):
         "reason": decision["reason"]
     }
 
-    logger.log(log_row)
-
     if not decision["allowed"]:
+        print("BLOCKED - Risk rejected:", decision["reason"])
+
+        execution_result = {
+            "broker": risk.config.get("mode", "paper"),
+            "status": "risk_blocked"
+        }
+
+        save_trade(
+            log_row,
+            execution_result,
+            score=strategy_score.get("score"),
+            pnl=None,
+            position_after=paper_account.get_status()["position"]
+        )
+
         return {
             "status": "blocked",
             "reason": decision["reason"],
@@ -136,24 +190,14 @@ def webhook(alert: TradingViewAlert):
             "paper_account": paper_account.get_status()
         }
 
-    position_decision = position.process(action)
-    if not position_decision["allowed"]:
-        return {
-            "status": "ignored",
-            "reason": position_decision["reason"],
-            "position": position_decision["position_after"],
-            "risk_status": risk.get_status(),
-            "paper_account": paper_account.get_status()
-        }
-
+    print("STEP 4 - Paper account process")
     paper_result = paper_account.process_order(
         action=action,
         price=alert.price,
         contracts=contracts
     )
 
-    paper_state = paper_account.get_status()
-
+    print("STEP 5 - Execution router")
     execution_result = executor.execute(
         action=action,
         symbol=alert.symbol,
@@ -163,18 +207,22 @@ def webhook(alert: TradingViewAlert):
 
     execution_result["paper_account"] = paper_result
 
+    print("STEP 6 - Save trade")
     save_trade(
         log_row,
         execution_result,
         score=strategy_score.get("score"),
         pnl=paper_result.get("pnl"),
-        position_after=paper_state.get("position")
+        position_after=paper_result.get("position")
     )
+
+    print("STEP 7 - Completed")
 
     return {
         "status": "accepted",
-        "message": "Signal received and routed.",
+        "message": "Signal received, scored, risk checked, paper processed, routed, and saved.",
         "signal": log_row,
+        "strategy_score": strategy_score,
         "execution": execution_result,
         "risk_status": risk.get_status(),
         "paper_account": paper_account.get_status()
