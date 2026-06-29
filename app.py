@@ -21,10 +21,12 @@ from trade_manager import TradeManager
 from statistics_engine import calculate_stats
 from market_scanner import MarketScanner
 from decision_engine import DecisionEngine
+from candle_engine import CandleEngine
+from indicator_engine import IndicatorEngine
 
 load_dotenv()
 
-app = FastAPI(title="Project Falcon ES/NQ Bot - v2")
+app = FastAPI(title="Project Falcon ES/NQ Bot - v3")
 
 risk = RiskManager("config.json")
 init_db()
@@ -41,6 +43,8 @@ strategy_engine = StrategyEngine(min_score=risk.config.get("strategy_min_score",
 trade_manager = TradeManager()
 scanner = MarketScanner(risk.config)
 decision_engine = DecisionEngine(min_score=risk.config.get("decision_min_score", 75))
+candle_engine = CandleEngine()
+indicator_engine = IndicatorEngine()
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -59,16 +63,15 @@ class ScannerUpdate(BaseModel):
     secret: str | None = None
     symbol: str
     price: float
-    vwap: float | None = None
-    ema: float | None = None
     volume: float | None = None
-    avg_volume: float | None = None
     time: str | None = None
 
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     trades = get_recent_trades()
+    best_market = scanner.best_market()
+    decision = decision_engine.evaluate(best_market)
 
     return templates.TemplateResponse(
         request=request,
@@ -80,7 +83,8 @@ def home(request: Request):
             "paper_account": paper_account.get_status(),
             "strategy_status": trade_manager.get_status(),
             "stats": calculate_stats(trades),
-            "scanner": scanner.best_market(),
+            "scanner": best_market,
+            "decision": decision,
         },
     )
 
@@ -88,6 +92,8 @@ def home(request: Request):
 @app.get("/health")
 def health():
     db_success, db_message = test_connection()
+    best_market = scanner.best_market()
+    decision = decision_engine.evaluate(best_market)
 
     return {
         "status": "ok",
@@ -98,9 +104,11 @@ def health():
         "paper_account": paper_account.get_status(),
         "scanner": {
             "enabled": risk.config.get("scanner_enabled", False),
-            "best_market": scanner.best_market(),
+            "best_market": best_market,
+            "decision": decision,
             "market_data": scanner.market_data,
         },
+        "candles": candle_engine.snapshot(),
     }
 
 
@@ -305,14 +313,16 @@ def scanner_update(update: ScannerUpdate):
             "message": "Scanner is disabled in config.",
         }
 
-    scanner.update_market(
+    candle_engine.update_tick(
         symbol=update.symbol,
         price=update.price,
-        vwap=update.vwap,
-        ema=update.ema,
         volume=update.volume,
-        avg_volume=update.avg_volume,
     )
+
+    candles = candle_engine.get_candles(update.symbol)
+    indicator_snapshot = indicator_engine.snapshot(update.symbol, candles)
+
+    scanner.update_market(indicator_snapshot)
 
     best = scanner.best_market()
     ai_decision = decision_engine.evaluate(best)
@@ -323,7 +333,8 @@ def scanner_update(update: ScannerUpdate):
             "message": ai_decision.get("reason"),
             "best_market": best,
             "decision": ai_decision,
-            "scanner_data": scanner.market_data,
+            "indicator_snapshot": indicator_snapshot,
+            "candles": candle_engine.snapshot(),
         }
 
     result = execute_falcon_signal(
@@ -338,5 +349,6 @@ def scanner_update(update: ScannerUpdate):
         "status": "ai_trade_sent",
         "best_market": best,
         "decision": ai_decision,
+        "indicator_snapshot": indicator_snapshot,
         "trade_result": result,
     }
