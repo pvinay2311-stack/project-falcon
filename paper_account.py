@@ -3,12 +3,15 @@ from database import get_account_state, save_account_state
 
 class PaperAccount:
     def __init__(self, contract_multiplier=50, stop_points=10, target_points=20):
-        self.position = "FLAT"
-        self.entry_price = None
-        self.contracts = 0
-        self.realized_pnl = 0.0
-        self.stop_price = None
-        self.target_price = None
+        state = get_account_state()
+
+        self.position = state.get("position", "FLAT")
+        self.entry_price = state.get("entry_price")
+        self.contracts = state.get("contracts", 0)
+        self.realized_pnl = state.get("realized_pnl", 0.0)
+        self.stop_price = state.get("stop_price")
+        self.target_price = state.get("target_price")
+
         self.contract_multiplier = contract_multiplier
         self.stop_points = stop_points
         self.target_points = target_points
@@ -36,6 +39,7 @@ class PaperAccount:
             self.target_price = price - self.target_points
 
         self.persist()
+
         return {
             "status": "opened",
             "position": self.position,
@@ -43,10 +47,11 @@ class PaperAccount:
             "contracts": self.contracts,
             "stop_price": self.stop_price,
             "target_price": self.target_price,
-            "realized_pnl": self.realized_pnl
+            "realized_pnl": self.realized_pnl,
+            "pnl": None
         }
 
-    def close_position(self, price: float):
+    def close_position(self, price: float, reason: str = "manual_close"):
         if self.position == "LONG":
             pnl = (price - self.entry_price) * self.contract_multiplier * self.contracts
             status = "closed_long"
@@ -54,18 +59,26 @@ class PaperAccount:
             pnl = (self.entry_price - price) * self.contract_multiplier * self.contracts
             status = "closed_short"
         else:
-            return {"status": "ignored", "reason": "No open position", "position": self.position}
+            return {
+                "status": "ignored",
+                "reason": "No open position",
+                "position": self.position,
+                "pnl": None
+            }
 
         self.realized_pnl += pnl
+
         self.position = "FLAT"
         self.entry_price = None
         self.contracts = 0
         self.stop_price = None
         self.target_price = None
+
         self.persist()
 
         return {
             "status": status,
+            "reason": reason,
             "pnl": pnl,
             "realized_pnl": self.realized_pnl,
             "position": self.position
@@ -79,19 +92,76 @@ class PaperAccount:
                 return self.open_position("LONG", price, contracts)
             if action == "SELL":
                 return self.open_position("SHORT", price, contracts)
-            return {"status": "rejected", "reason": "Invalid action"}
+            return {"status": "rejected", "reason": "Invalid action", "pnl": None}
 
         if self.position == "LONG":
             if action == "SELL":
-                return self.close_position(price)
-            return {"status": "ignored", "reason": "Already LONG", "position": self.position}
+                return self.close_position(price, reason="manual_sell_close")
+            return {
+                "status": "ignored",
+                "reason": "Already LONG",
+                "position": self.position,
+                "pnl": None
+            }
 
         if self.position == "SHORT":
             if action == "BUY":
-                return self.close_position(price)
-            return {"status": "ignored", "reason": "Already SHORT", "position": self.position}
+                return self.close_position(price, reason="manual_buy_close")
+            return {
+                "status": "ignored",
+                "reason": "Already SHORT",
+                "position": self.position,
+                "pnl": None
+            }
 
-        return {"status": "rejected", "reason": "Unknown state"}
+        return {"status": "rejected", "reason": "Unknown state", "pnl": None}
+
+    def check_stop_target(self, price: float):
+        if self.position == "FLAT":
+            return {
+                "triggered": False,
+                "reason": "No open position",
+                "position": self.position
+            }
+
+        if self.stop_price is None or self.target_price is None:
+            return {
+                "triggered": False,
+                "reason": "Stop/target not set",
+                "position": self.position
+            }
+
+        if self.position == "LONG":
+            if price <= self.stop_price:
+                result = self.close_position(price, reason="stop_loss_hit")
+                result["triggered"] = True
+                result["trigger_type"] = "stop_loss"
+                return result
+
+            if price >= self.target_price:
+                result = self.close_position(price, reason="target_hit")
+                result["triggered"] = True
+                result["trigger_type"] = "target"
+                return result
+
+        if self.position == "SHORT":
+            if price >= self.stop_price:
+                result = self.close_position(price, reason="stop_loss_hit")
+                result["triggered"] = True
+                result["trigger_type"] = "stop_loss"
+                return result
+
+            if price <= self.target_price:
+                result = self.close_position(price, reason="target_hit")
+                result["triggered"] = True
+                result["trigger_type"] = "target"
+                return result
+
+        return {
+            "triggered": False,
+            "reason": "No stop or target hit",
+            "position": self.position
+        }
 
     def get_status(self):
         return {
