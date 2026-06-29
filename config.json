@@ -15,5 +15,11 @@
   "strategy_min_score": 70,
   "default_stop_points": 10,
   "default_target_points": 20,
-  "contract_multiplier": 50
+  "contract_multiplier": 50,
+  "scanner_enabled": true,
+  "scanner_start": "08:00",
+  "scanner_end": "09:30",
+  "scanner_execute_after": "09:30",
+  "scanner_min_score": 70,
+  "scanner_min_momentum_pct": 0.15
 }
