@@ -313,28 +313,28 @@ def scanner_update(update: ScannerUpdate):
     )
 
     best = scanner.best_market()
-    decision = scanner.should_trade()
+    ai_decision = decision_engine.evaluate(best)
 
-    if not decision.get("approved"):
+    if not ai_decision.get("approved"):
         return {
             "status": "scanning",
-            "message": decision.get("reason"),
+            "message": ai_decision.get("reason"),
             "best_market": best,
+            "decision": ai_decision,
             "scanner_data": scanner.market_data,
         }
 
-    best = decision["best"]
-
     result = execute_falcon_signal(
-        action=best["direction"],
+        action=ai_decision["direction"],
         symbol=best["symbol"],
         price=best["price"],
-        strategy="Market Scanner",
+        strategy="AI Decision Engine",
         time=update.time,
     )
 
     return {
-        "status": "scanner_trade_sent",
+        "status": "ai_trade_sent",
         "best_market": best,
+        "decision": ai_decision,
         "trade_result": result,
     }
