@@ -78,6 +78,7 @@ def home(request: Request):
             "paper_account": paper_account.get_status(),
             "strategy_status": trade_manager.get_status(),
             "stats": calculate_stats(trades),
+            "scanner": scanner.best_market(),
         },
     )
 
