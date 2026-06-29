@@ -20,6 +20,7 @@ from strategy_engine import StrategyEngine
 from trade_manager import TradeManager
 from statistics_engine import calculate_stats
 from market_scanner import MarketScanner
+from decision_engine import DecisionEngine
 
 load_dotenv()
 
@@ -39,6 +40,7 @@ paper_account = PaperAccount(
 strategy_engine = StrategyEngine(min_score=risk.config.get("strategy_min_score", 70))
 trade_manager = TradeManager()
 scanner = MarketScanner(risk.config)
+decision_engine = DecisionEngine(min_score=risk.config.get("decision_min_score", 75))
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
