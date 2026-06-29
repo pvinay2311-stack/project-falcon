@@ -1,175 +1,206 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from indicator_engine import IndicatorEngine
+from market_feed import MarketFeed
+
 
 class MarketScanner:
-    """Automated market analysis and trading signal generation."""
+    """
+    Autonomous market scanner using IndicatorEngine candles and patterns
+    for trading signal generation. Takes raw price ticks, builds candles,
+    computes indicators, detects patterns, and scores trading opportunities.
+    """
 
     def __init__(self, config: dict):
         self.config = config
         self.market_data = {}
+        self.indicators = IndicatorEngine(
+            ema_period=20,
+            timeframe_minutes=config.get("scanner_candle_minutes", 5),
+        )
+        self.market_feed = MarketFeed(stale_seconds=300)
         self.trade_taken_today = False
-        
+
     def now_et(self):
-        """Get current time in Eastern timezone."""
         return datetime.now(ZoneInfo("America/New_York"))
-    
-    def in_scan_window(self) -> bool:
-        """Check if within scan window (08:00-09:30 ET)."""
-        now = self.now_et()
-        start_time = self.config.get("scanner_start", "08:00")
-        end_time = self.config.get("scanner_end", "09:30")
-        
-        start_hour, start_min = map(int, start_time.split(":"))
-        end_hour, end_min = map(int, end_time.split(":"))
-        
-        start_dt = now.replace(hour=start_hour, minute=start_min, second=0, microsecond=0)
-        end_dt = now.replace(hour=end_hour, minute=end_min, second=0, microsecond=0)
-        
-        return start_dt <= now <= end_dt
-    
-    def can_execute_after_scan(self) -> bool:
-        """Check if past execution time (09:30 ET)."""
-        now = self.now_et()
-        execute_time = self.config.get("scanner_execute_after", "09:30")
-        exec_hour, exec_min = map(int, execute_time.split(":"))
-        
-        exec_dt = now.replace(hour=exec_hour, minute=exec_min, second=0, microsecond=0)
-        return now >= exec_dt
-    
-    def update_market(self, symbol: str, price: float, vwap: float | None = None, 
-                     ema: float | None = None, volume: float | None = None, 
-                     avg_volume: float | None = None):
-        """Update market data for symbol."""
-        if symbol not in self.market_data:
-            self.market_data[symbol] = {}
-        
-        self.market_data[symbol].update({
-            "price": price,
-            "vwap": vwap,
-            "ema": ema,
-            "volume": volume,
-            "avg_volume": avg_volume,
-            "updated_at": self.now_et().isoformat(),
-        })
-    
+
+    def update_market(self, symbol: str, price: float, volume: float = 0.0, 
+                      vwap: float | None = None, ema: float | None = None,
+                      avg_volume: float | None = None):
+        """
+        Ingest a price tick: update candles, indicators, and market feed.
+        External VWAP/EMA values are optional (IndicatorEngine computes internally).
+        """
+        # Build/update candles and compute EMA/VWAP from them
+        indicator_result = self.indicators.update(symbol, price, volume)
+
+        # Use computed indicators, fallback to externally provided values
+        computed_vwap = indicator_result.get("vwap")
+        computed_ema = indicator_result.get("ema")
+        final_vwap = computed_vwap if computed_vwap is not None else vwap
+        final_ema = computed_ema if computed_ema is not None else ema
+
+        # Ingest into market feed (unified data aggregation)
+        feed_data = self.market_feed.ingest(
+            symbol=symbol,
+            price=price,
+            vwap=final_vwap,
+            ema=final_ema,
+            volume=volume,
+            avg_volume=avg_volume,
+            source="scanner",
+        )
+
+        # Store for scoring
+        self.market_data[symbol] = {
+            **feed_data,
+            "indicator_snapshot": indicator_result,
+            "candle": indicator_result.get("candle"),
+            "pattern": self.indicators.detect_pattern(symbol),
+        }
+
     def score_symbol(self, symbol: str) -> dict:
-        """Calculate signal score (0-100) with momentum and technical confirmation."""
-        if symbol not in self.market_data:
-            return {"approved": False, "reason": f"No market data for {symbol}"}
-        
-        data = self.market_data[symbol]
+        """
+        Score a symbol using momentum, candle patterns, and technical alignment.
+        Patterns (engulfing, runs) are strong BUY/SELL signals.
+        """
+        data = self.market_data.get(symbol)
+        if not data:
+            return {
+                "symbol": symbol,
+                "direction": None,
+                "score": 0,
+                "price": None,
+                "reasons": ["No market data"],
+            }
+
         price = data.get("price", 0)
         vwap = data.get("vwap")
         ema = data.get("ema")
-        volume = data.get("volume", 0)
-        avg_volume = data.get("avg_volume", 1)
-        
+        momentum_pct = data.get("momentum_pct", 0)
+        pattern = data.get("pattern", {})
+        candle = data.get("candle", {})
+
         score = 0
         direction = None
         reasons = []
-        momentum_pct = 0
-        
-        # Calculate momentum (simplified - would use price history in production)
-        min_momentum = self.config.get("scanner_min_momentum_pct", 0.15) / 100
-        
-        # Bullish momentum detection
-        if price > 0 and vwap and price > vwap:
-            momentum_pct = ((price - vwap) / vwap) * 100
-            if momentum_pct >= self.config.get("scanner_min_momentum_pct", 0.15):
-                score += 35
-                direction = "BUY"
-                reasons.append(f"Bullish momentum: +{momentum_pct:.2f}%")
-        
-        # Bearish momentum detection
-        if price > 0 and vwap and price < vwap:
-            momentum_pct = ((vwap - price) / vwap) * 100
-            if momentum_pct >= self.config.get("scanner_min_momentum_pct", 0.15):
-                score += 35
-                direction = "SELL"
-                reasons.append(f"Bearish momentum: -{momentum_pct:.2f}%")
-        
-        # VWAP confirmation for BUY
-        if direction == "BUY" and vwap and price >= vwap:
-            score += 20
-            reasons.append("VWAP confirmation")
-        
-        # VWAP confirmation for SELL
-        if direction == "SELL" and vwap and price <= vwap:
-            score += 20
-            reasons.append("VWAP confirmation")
-        
-        # EMA confirmation for BUY
-        if direction == "BUY" and ema and price >= ema:
-            score += 20
-            reasons.append("EMA confirmation")
-        
-        # EMA confirmation for SELL
-        if direction == "SELL" and ema and price <= ema:
-            score += 20
-            reasons.append("EMA confirmation")
-        
+        min_momentum = self.config.get("scanner_min_momentum_pct", 0.15)
+
+        # Pattern-based signals (high confidence)
+        pattern_name = pattern.get("pattern")
+        if pattern_name == "bullish_engulfing":
+            direction = "BUY"
+            score += 50
+            reasons.append("Bullish engulfing pattern")
+        elif pattern_name == "bearish_engulfing":
+            direction = "SELL"
+            score += 50
+            reasons.append("Bearish engulfing pattern")
+        elif pattern_name == "bullish_run":
+            direction = "BUY"
+            score += 35
+            reasons.append("Bullish run (3 green candles)")
+        elif pattern_name == "bearish_run":
+            direction = "SELL"
+            score += 35
+            reasons.append("Bearish run (3 red candles)")
+
+        # Momentum-based signals (medium confidence)
+        if momentum_pct >= min_momentum and not direction:
+            direction = "BUY"
+            score += 30
+            reasons.append(f"Bullish momentum +{momentum_pct:.2f}%")
+        elif momentum_pct <= -min_momentum and not direction:
+            direction = "SELL"
+            score += 30
+            reasons.append(f"Bearish momentum {momentum_pct:.2f}%")
+
+        if not direction:
+            return {
+                "symbol": symbol,
+                "direction": None,
+                "score": 0,
+                "price": price,
+                "reasons": ["No clear signal"],
+                "indicators": data,
+            }
+
+        # Technical confirmations (add to score)
+        if direction == "BUY":
+            if vwap and price > vwap:
+                score += 20
+                reasons.append("Price above VWAP")
+            if ema and price > ema:
+                score += 20
+                reasons.append("Price above EMA")
+            if candle.get("bullish"):
+                score += 10
+                reasons.append("Current candle bullish")
+
+        elif direction == "SELL":
+            if vwap and price < vwap:
+                score += 20
+                reasons.append("Price below VWAP")
+            if ema and price < ema:
+                score += 20
+                reasons.append("Price below EMA")
+            if candle.get("bearish"):
+                score += 10
+                reasons.append("Current candle bearish")
+
         # Volume confirmation
-        if volume and avg_volume and volume > (1.2 * avg_volume):
-            score += 25
+        if data.get("volume", 0) > (data.get("avg_volume", 1) * 1.2):
+            score += 15
             reasons.append("Volume confirmation")
-        
+
         return {
             "symbol": symbol,
-            "score": score,
             "direction": direction,
+            "score": min(score, 100),  # Cap at 100
             "momentum_pct": momentum_pct,
             "price": price,
             "reasons": reasons,
+            "pattern": pattern,
+            "candle": candle,
+            "indicators": {k: v for k, v in data.items() if k not in ["indicator_snapshot", "pattern"]},
         }
-    
+
     def best_market(self) -> dict | None:
-        """Find highest-scored trading opportunity."""
-        best_score = 0
-        best_symbol = None
-        best_result = None
-        
-        for symbol in self.market_data:
-            result = self.score_symbol(symbol)
-            if result.get("score", 0) > best_score and result.get("direction"):
-                best_score = result["score"]
-                best_symbol = symbol
-                best_result = result
-        
-        return best_result
-    
+        """Return the highest-scored trading opportunity across all symbols."""
+        results = [self.score_symbol(symbol) for symbol in self.market_data]
+        results = [r for r in results if r.get("direction")]  # Filter no-signal
+
+        if not results:
+            return None
+
+        return max(results, key=lambda x: x["score"])
+
     def should_trade(self) -> dict:
-        """Determine if trade should execute based on score and timing."""
+        """Check if best market opportunity should be traded."""
         if self.trade_taken_today:
             return {
                 "approved": False,
                 "reason": "One trade per day limit reached",
                 "best": None,
             }
-        
+
         best = self.best_market()
-        
         if not best:
             return {
                 "approved": False,
                 "reason": "No market opportunities found",
                 "best": None,
             }
-        
-        if best["score"] < self.config.get("scanner_min_score", 70):
+
+        min_score = self.config.get("scanner_min_score", 70)
+        if best["score"] < min_score:
             return {
                 "approved": False,
-                "reason": f"Score {best['score']} below threshold {self.config.get('scanner_min_score', 70)}",
+                "reason": f"Score {best['score']} below threshold {min_score}",
                 "best": best,
             }
-        
-        if not self.can_execute_after_scan():
-            return {
-                "approved": False,
-                "reason": f"Outside execution window (need to be after {self.config.get('scanner_execute_after', '09:30')} ET)",
-                "best": best,
-            }
-        
+
         self.trade_taken_today = True
         return {
             "approved": True,
