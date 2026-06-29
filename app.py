@@ -10,7 +10,6 @@ from risk_manager import RiskManager
 from execution_router import ExecutionRouter
 from database import (
     init_db,
-    save_trade,
     get_recent_trades,
     get_db_status,
     test_connection,
@@ -23,6 +22,8 @@ from market_scanner import MarketScanner
 from decision_engine import DecisionEngine
 from candle_engine import CandleEngine
 from indicator_engine import IndicatorEngine
+from timeframe_engine import TimeframeEngine
+from services.trade_service import TradeService
 
 load_dotenv()
 
@@ -45,6 +46,14 @@ scanner = MarketScanner(risk.config)
 decision_engine = DecisionEngine(min_score=risk.config.get("decision_min_score", 75))
 candle_engine = CandleEngine()
 indicator_engine = IndicatorEngine()
+timeframe_engine = TimeframeEngine()
+trade_service = TradeService(
+    risk=risk,
+    paper_account=paper_account,
+    strategy_engine=strategy_engine,
+    trade_manager=trade_manager,
+    executor=executor,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -109,164 +118,7 @@ def health():
             "market_data": scanner.market_data,
         },
         "candles": candle_engine.snapshot(),
-    }
-
-
-def execute_falcon_signal(action: str, symbol: str, price: float, strategy: str, time: str | None = None):
-    contracts = 1
-
-    strategy_score = strategy_engine.score_signal(
-        action=action,
-        symbol=symbol,
-        price=price,
-        risk_status=risk.get_status(),
-    )
-
-    trade_decision = trade_manager.process_signal(
-        action=action,
-        symbol=symbol,
-        price=price,
-        strategy_score=strategy_score,
-    )
-
-    if not trade_decision["allowed"]:
-        log_row = {
-            "received_at": datetime.utcnow().isoformat(),
-            "action": action,
-            "symbol": symbol,
-            "price": price,
-            "strategy": strategy,
-            "tradingview_time": time,
-            "decision": False,
-            "reason": trade_decision["reason"],
-        }
-
-        execution_result = {
-            "broker": risk.config.get("mode", "paper"),
-            "status": "strategy_blocked",
-        }
-
-        save_trade(
-            log_row,
-            execution_result,
-            score=strategy_score.get("score"),
-            pnl=None,
-            position_after=paper_account.get_status()["position"],
-        )
-
-        return {
-            "status": "blocked",
-            "reason": trade_decision["reason"],
-            "strategy_score": strategy_score,
-        }
-
-    current_position = paper_account.get_status()["position"]
-
-    invalid_transition = (
-        (current_position == "LONG" and action == "BUY")
-        or (current_position == "SHORT" and action == "SELL")
-    )
-
-    if invalid_transition:
-        log_row = {
-            "received_at": datetime.utcnow().isoformat(),
-            "action": action,
-            "symbol": symbol,
-            "price": price,
-            "strategy": strategy,
-            "tradingview_time": time,
-            "decision": False,
-            "reason": f"Already {current_position}",
-        }
-
-        execution_result = {
-            "broker": risk.config.get("mode", "paper"),
-            "status": "position_blocked",
-        }
-
-        save_trade(
-            log_row,
-            execution_result,
-            score=strategy_score.get("score"),
-            pnl=None,
-            position_after=current_position,
-        )
-
-        return {
-            "status": "blocked",
-            "reason": f"Already {current_position}",
-            "paper_account": paper_account.get_status(),
-        }
-
-    decision = risk.check_trade_allowed(
-        contracts=contracts,
-        realized_pnl=paper_account.get_status()["realized_pnl"],
-    )
-
-    log_row = {
-        "received_at": datetime.utcnow().isoformat(),
-        "action": action,
-        "symbol": symbol,
-        "price": price,
-        "strategy": strategy,
-        "tradingview_time": time,
-        "decision": decision["allowed"],
-        "reason": decision["reason"],
-    }
-
-    if not decision["allowed"]:
-        execution_result = {
-            "broker": risk.config.get("mode", "paper"),
-            "status": "risk_blocked",
-        }
-
-        save_trade(
-            log_row,
-            execution_result,
-            score=strategy_score.get("score"),
-            pnl=None,
-            position_after=paper_account.get_status()["position"],
-        )
-
-        return {
-            "status": "blocked",
-            "reason": decision["reason"],
-            "risk_status": risk.get_status(),
-            "paper_account": paper_account.get_status(),
-        }
-
-    paper_result = paper_account.process_order(
-        action=action,
-        price=price,
-        contracts=contracts,
-    )
-
-    execution_result = executor.execute(
-        action=action,
-        symbol=symbol,
-        price=price,
-        contracts=contracts,
-    )
-
-    execution_result["status"] = "paper_routed"
-    execution_result["paper_account"] = paper_result
-
-    save_trade(
-        log_row,
-        execution_result,
-        score=strategy_score.get("score"),
-        pnl=paper_result.get("pnl"),
-        position_after=paper_result.get("position"),
-    )
-
-    return {
-        "status": "accepted",
-        "message": "Signal received, scored, risk checked, paper processed, routed, and saved.",
-        "signal": log_row,
-        "strategy_score": strategy_score,
-        "execution": execution_result,
-        "risk_status": risk.get_status(),
-        "paper_account": paper_account.get_status(),
+        "timeframes": timeframe_engine.snapshot(),
     }
 
 
@@ -288,7 +140,7 @@ def webhook(alert: TradingViewAlert):
     if alert.price is None or alert.price <= 0:
         raise HTTPException(status_code=400, detail="Valid price is required.")
 
-    return execute_falcon_signal(
+    return trade_service.execute_signal(
         action=action,
         symbol=alert.symbol,
         price=alert.price,
@@ -319,6 +171,12 @@ def scanner_update(update: ScannerUpdate):
         volume=update.volume,
     )
 
+    timeframe_engine.update_tick(
+        symbol=update.symbol,
+        price=update.price,
+        volume=update.volume,
+    )
+
     candles = candle_engine.get_candles(update.symbol)
     indicator_snapshot = indicator_engine.snapshot(update.symbol, candles)
 
@@ -335,9 +193,10 @@ def scanner_update(update: ScannerUpdate):
             "decision": ai_decision,
             "indicator_snapshot": indicator_snapshot,
             "candles": candle_engine.snapshot(),
+            "timeframes": timeframe_engine.snapshot(),
         }
 
-    result = execute_falcon_signal(
+    result = trade_service.execute_signal(
         action=ai_decision["direction"],
         symbol=best["symbol"],
         price=best["price"],
@@ -350,5 +209,6 @@ def scanner_update(update: ScannerUpdate):
         "best_market": best,
         "decision": ai_decision,
         "indicator_snapshot": indicator_snapshot,
+        "timeframes": timeframe_engine.snapshot(),
         "trade_result": result,
     }
