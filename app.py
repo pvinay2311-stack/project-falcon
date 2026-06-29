@@ -92,15 +92,21 @@ def health():
 
 @app.post("/price")
 def price_update(update: PriceUpdate):
-    expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
+    try:
+        expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
 
-    if update.secret != expected_secret:
-        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+        if update.secret != expected_secret:
+            raise HTTPException(status_code=403, detail="Invalid webhook secret")
 
-    if not risk.symbol_allowed(update.symbol):
-        raise HTTPException(status_code=400, detail=f"Symbol not allowed: {update.symbol}")
+        if not risk.symbol_allowed(update.symbol):
+            raise HTTPException(status_code=400, detail=f"Symbol not allowed: {update.symbol}")
 
-    result = paper_account.check_stop_target(update.price)
+        result = paper_account.check_stop_target(update.price)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR in /price: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     if not result.get("triggered"):
         return {
@@ -126,13 +132,16 @@ def price_update(update: PriceUpdate):
         "status": result.get("trigger_type")
     }
 
-    save_trade(
-        log_row,
-        execution_result,
-        score=None,
-        pnl=result.get("pnl"),
-        position_after=result.get("position")
-    )
+    try:
+        save_trade(
+            log_row,
+            execution_result,
+            score=None,
+            pnl=result.get("pnl"),
+            position_after=result.get("position")
+        )
+    except Exception as e:
+        print(f"WARNING: save_trade failed in /price: {e}")
 
     return {
         "status": "closed",

@@ -17,14 +17,17 @@ class PaperAccount:
         self.target_points = target_points
 
     def persist(self):
-        save_account_state(
-            self.position,
-            self.entry_price,
-            self.contracts,
-            self.realized_pnl,
-            self.stop_price,
-            self.target_price
-        )
+        try:
+            save_account_state(
+                self.position,
+                self.entry_price,
+                self.contracts,
+                self.realized_pnl,
+                self.stop_price,
+                self.target_price
+            )
+        except Exception as e:
+            print(f"WARNING: persist() failed: {e}")
 
     def open_position(self, side: str, price: float, contracts: int):
         self.position = side
