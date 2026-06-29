@@ -21,5 +21,6 @@
   "scanner_end": "09:30",
   "scanner_execute_after": "09:30",
   "scanner_min_score": 70,
-  "scanner_min_momentum_pct": 0.15
+  "scanner_min_momentum_pct": 0.15,
+  "decision_min_score": 75
 }
