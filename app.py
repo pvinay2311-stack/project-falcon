@@ -19,6 +19,7 @@ from paper_account import PaperAccount
 from strategy_engine import StrategyEngine
 from trade_manager import TradeManager
 from statistics_engine import calculate_stats
+from market_scanner import MarketScanner
 
 load_dotenv()
 
@@ -37,6 +38,7 @@ paper_account = PaperAccount(
 
 strategy_engine = StrategyEngine(min_score=risk.config.get("strategy_min_score", 70))
 trade_manager = TradeManager()
+scanner = MarketScanner(risk.config)
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -51,10 +53,14 @@ class TradingViewAlert(BaseModel):
     secret: str | None = None
 
 
-class PriceUpdate(BaseModel):
+class ScannerUpdate(BaseModel):
     secret: str | None = None
     symbol: str
     price: float
+    vwap: float | None = None
+    ema: float | None = None
+    volume: float | None = None
+    avg_volume: float | None = None
     time: str | None = None
 
 
@@ -87,122 +93,39 @@ def health():
         "database_connection": db_message if db_success else f"❌ {db_message}",
         "risk_status": risk.get_status(),
         "paper_account": paper_account.get_status(),
+        "scanner": {
+            "enabled": risk.config.get("scanner_enabled", False),
+            "best_market": scanner.best_market(),
+            "market_data": scanner.market_data,
+        },
     }
 
 
-@app.post("/price")
-def price_update(update: PriceUpdate):
-    try:
-        expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
-
-        if update.secret != expected_secret:
-            raise HTTPException(status_code=403, detail="Invalid webhook secret")
-
-        if not risk.symbol_allowed(update.symbol):
-            raise HTTPException(status_code=400, detail=f"Symbol not allowed: {update.symbol}")
-
-        result = paper_account.check_stop_target(update.price)
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"ERROR in /price: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-    if not result.get("triggered"):
-        return {
-            "status": "ok",
-            "message": "Price received. No stop or target hit.",
-            "price": update.price,
-            "paper_account": paper_account.get_status()
-        }
-
-    log_row = {
-        "received_at": datetime.utcnow().isoformat(),
-        "action": "AUTO_CLOSE",
-        "symbol": update.symbol,
-        "price": update.price,
-        "strategy": result.get("trigger_type"),
-        "tradingview_time": update.time,
-        "decision": True,
-        "reason": result.get("reason")
-    }
-
-    execution_result = {
-        "broker": risk.config.get("mode", "paper"),
-        "status": result.get("trigger_type")
-    }
-
-    try:
-        save_trade(
-            log_row,
-            execution_result,
-            score=None,
-            pnl=result.get("pnl"),
-            position_after=result.get("position")
-        )
-    except Exception as e:
-        print(f"WARNING: save_trade failed in /price: {e}")
-
-    return {
-        "status": "closed",
-        "reason": result.get("reason"),
-        "trigger_type": result.get("trigger_type"),
-        "pnl": result.get("pnl"),
-        "paper_account": paper_account.get_status()
-    }
-
-
-@app.post("/webhook")
-def webhook(alert: TradingViewAlert):
-    print("STEP 0 - TradingView Alert:", alert.model_dump())
-
-    action = alert.action.upper()
-
-    expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
-    if alert.secret != expected_secret:
-        print("BLOCKED - Invalid secret")
-        raise HTTPException(status_code=403, detail="Invalid webhook secret")
-
-    if action not in ["BUY", "SELL"]:
-        print("BLOCKED - Invalid action")
-        raise HTTPException(status_code=400, detail="Invalid action. Use BUY or SELL.")
-
-    if not risk.symbol_allowed(alert.symbol):
-        print("BLOCKED - Symbol not allowed")
-        raise HTTPException(status_code=400, detail=f"Symbol not allowed: {alert.symbol}")
-
-    if alert.price is None or alert.price <= 0:
-        print("BLOCKED - Invalid price")
-        raise HTTPException(status_code=400, detail="Valid price is required.")
-
+def execute_falcon_signal(action: str, symbol: str, price: float, strategy: str, time: str | None = None):
     contracts = 1
 
-    print("STEP 1 - Strategy scoring")
     strategy_score = strategy_engine.score_signal(
         action=action,
-        symbol=alert.symbol,
-        price=alert.price,
+        symbol=symbol,
+        price=price,
         risk_status=risk.get_status(),
     )
 
-    print("STEP 2 - Trade manager")
     trade_decision = trade_manager.process_signal(
         action=action,
-        symbol=alert.symbol,
-        price=alert.price,
+        symbol=symbol,
+        price=price,
         strategy_score=strategy_score,
     )
 
     if not trade_decision["allowed"]:
-        print("BLOCKED - Strategy rejected")
-
         log_row = {
             "received_at": datetime.utcnow().isoformat(),
             "action": action,
-            "symbol": alert.symbol,
-            "price": alert.price,
-            "strategy": alert.strategy,
-            "tradingview_time": alert.time,
+            "symbol": symbol,
+            "price": price,
+            "strategy": strategy,
+            "tradingview_time": time,
             "decision": False,
             "reason": trade_decision["reason"],
         }
@@ -226,7 +149,6 @@ def webhook(alert: TradingViewAlert):
             "strategy_score": strategy_score,
         }
 
-    print("STEP 3 - Position validity check")
     current_position = paper_account.get_status()["position"]
 
     invalid_transition = (
@@ -235,15 +157,13 @@ def webhook(alert: TradingViewAlert):
     )
 
     if invalid_transition:
-        print("BLOCKED - Invalid position transition")
-
         log_row = {
             "received_at": datetime.utcnow().isoformat(),
             "action": action,
-            "symbol": alert.symbol,
-            "price": alert.price,
-            "strategy": alert.strategy,
-            "tradingview_time": alert.time,
+            "symbol": symbol,
+            "price": price,
+            "strategy": strategy,
+            "tradingview_time": time,
             "decision": False,
             "reason": f"Already {current_position}",
         }
@@ -267,7 +187,6 @@ def webhook(alert: TradingViewAlert):
             "paper_account": paper_account.get_status(),
         }
 
-    print("STEP 4 - Risk check")
     decision = risk.check_trade_allowed(
         contracts=contracts,
         realized_pnl=paper_account.get_status()["realized_pnl"],
@@ -276,17 +195,15 @@ def webhook(alert: TradingViewAlert):
     log_row = {
         "received_at": datetime.utcnow().isoformat(),
         "action": action,
-        "symbol": alert.symbol,
-        "price": alert.price,
-        "strategy": alert.strategy,
-        "tradingview_time": alert.time,
+        "symbol": symbol,
+        "price": price,
+        "strategy": strategy,
+        "tradingview_time": time,
         "decision": decision["allowed"],
         "reason": decision["reason"],
     }
 
     if not decision["allowed"]:
-        print("BLOCKED - Risk rejected:", decision["reason"])
-
         execution_result = {
             "broker": risk.config.get("mode", "paper"),
             "status": "risk_blocked",
@@ -307,25 +224,22 @@ def webhook(alert: TradingViewAlert):
             "paper_account": paper_account.get_status(),
         }
 
-    print("STEP 5 - Paper account execution")
     paper_result = paper_account.process_order(
         action=action,
-        price=alert.price,
+        price=price,
         contracts=contracts,
     )
 
-    print("STEP 6 - Execution router")
     execution_result = executor.execute(
         action=action,
-        symbol=alert.symbol,
-        price=alert.price,
+        symbol=symbol,
+        price=price,
         contracts=contracts,
     )
 
     execution_result["status"] = "paper_routed"
     execution_result["paper_account"] = paper_result
 
-    print("STEP 7 - Save trade")
     save_trade(
         log_row,
         execution_result,
@@ -333,8 +247,6 @@ def webhook(alert: TradingViewAlert):
         pnl=paper_result.get("pnl"),
         position_after=paper_result.get("position"),
     )
-
-    print("STEP 8 - Completed")
 
     return {
         "status": "accepted",
@@ -344,4 +256,137 @@ def webhook(alert: TradingViewAlert):
         "execution": execution_result,
         "risk_status": risk.get_status(),
         "paper_account": paper_account.get_status(),
+    }
+
+
+@app.post("/scanner")
+def scanner_update(update: ScannerUpdate):
+    expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
+
+    if update.secret != expected_secret:
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
+    if not risk.symbol_allowed(update.symbol):
+        raise HTTPException(status_code=400, detail=f"Symbol not allowed: {update.symbol}")
+
+    if not risk.config.get("scanner_enabled", False):
+        return {
+            "status": "disabled",
+            "message": "Scanner is disabled in config.",
+        }
+
+    scanner.update_market(
+        symbol=update.symbol,
+        price=update.price,
+        vwap=update.vwap,
+        ema=update.ema,
+        volume=update.volume,
+        avg_volume=update.avg_volume,
+    )
+
+    best = scanner.best_market()
+    decision = scanner.should_trade()
+
+    if not decision.get("approved"):
+        return {
+            "status": "scanning",
+            "message": decision.get("reason"),
+            "best_market": best,
+            "scanner_data": scanner.market_data,
+        }
+
+    best = decision["best"]
+
+    result = execute_falcon_signal(
+        action=best["direction"],
+        symbol=best["symbol"],
+        price=best["price"],
+        strategy="Market Scanner",
+        time=update.time,
+    )
+
+    return {
+        "status": "scanner_trade_sent",
+        "best_market": best,
+        "trade_result": result,
+    }
+
+
+@app.post("/webhook")
+def webhook(alert: TradingViewAlert):
+    expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
+
+    if alert.secret != expected_secret:
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
+    action = alert.action.upper()
+
+    if action not in ["BUY", "SELL"]:
+        raise HTTPException(status_code=400, detail="Invalid action. Use BUY or SELL.")
+
+    if not risk.symbol_allowed(alert.symbol):
+        raise HTTPException(status_code=400, detail=f"Symbol not allowed: {alert.symbol}")
+
+    if alert.price is None or alert.price <= 0:
+        raise HTTPException(status_code=400, detail="Valid price is required.")
+
+    return execute_falcon_signal(
+        action=action,
+        symbol=alert.symbol,
+        price=alert.price,
+        strategy=alert.strategy or "TradingView",
+        time=alert.time,
+    )
+
+
+@app.post("/scanner")
+def scanner_update(update: ScannerUpdate):
+    expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
+
+    if update.secret != expected_secret:
+        raise HTTPException(status_code=403, detail="Invalid webhook secret")
+
+    if not risk.symbol_allowed(update.symbol):
+        raise HTTPException(status_code=400, detail=f"Symbol not allowed: {update.symbol}")
+
+    if not risk.config.get("scanner_enabled", False):
+        return {
+            "status": "disabled",
+            "message": "Scanner is disabled in config.",
+        }
+
+    scanner.update_market(
+        symbol=update.symbol,
+        price=update.price,
+        vwap=update.vwap,
+        ema=update.ema,
+        volume=update.volume,
+        avg_volume=update.avg_volume,
+    )
+
+    best = scanner.best_market()
+    decision = scanner.should_trade()
+
+    if not decision.get("approved"):
+        return {
+            "status": "scanning",
+            "message": decision.get("reason"),
+            "best_market": best,
+            "scanner_data": scanner.market_data,
+        }
+
+    best = decision["best"]
+
+    result = execute_falcon_signal(
+        action=best["direction"],
+        symbol=best["symbol"],
+        price=best["price"],
+        strategy="Market Scanner",
+        time=update.time,
+    )
+
+    return {
+        "status": "scanner_trade_sent",
+        "best_market": best,
+        "trade_result": result,
     }
