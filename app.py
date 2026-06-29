@@ -259,59 +259,6 @@ def execute_falcon_signal(action: str, symbol: str, price: float, strategy: str,
     }
 
 
-@app.post("/scanner")
-def scanner_update(update: ScannerUpdate):
-    expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
-
-    if update.secret != expected_secret:
-        raise HTTPException(status_code=403, detail="Invalid webhook secret")
-
-    if not risk.symbol_allowed(update.symbol):
-        raise HTTPException(status_code=400, detail=f"Symbol not allowed: {update.symbol}")
-
-    if not risk.config.get("scanner_enabled", False):
-        return {
-            "status": "disabled",
-            "message": "Scanner is disabled in config.",
-        }
-
-    scanner.update_market(
-        symbol=update.symbol,
-        price=update.price,
-        vwap=update.vwap,
-        ema=update.ema,
-        volume=update.volume,
-        avg_volume=update.avg_volume,
-    )
-
-    best = scanner.best_market()
-    decision = scanner.should_trade()
-
-    if not decision.get("approved"):
-        return {
-            "status": "scanning",
-            "message": decision.get("reason"),
-            "best_market": best,
-            "scanner_data": scanner.market_data,
-        }
-
-    best = decision["best"]
-
-    result = execute_falcon_signal(
-        action=best["direction"],
-        symbol=best["symbol"],
-        price=best["price"],
-        strategy="Market Scanner",
-        time=update.time,
-    )
-
-    return {
-        "status": "scanner_trade_sent",
-        "best_market": best,
-        "trade_result": result,
-    }
-
-
 @app.post("/webhook")
 def webhook(alert: TradingViewAlert):
     expected_secret = risk.config.get("webhook_secret") or risk.config.get("secret")
